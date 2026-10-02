@@ -1,260 +1,549 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#07111f">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planwerk 1</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Planwerk | Mein Stundenplan</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
-        body {
-            background-color: #f4f6f8;
-            color: #333;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
+        :root { --ink: #eef4ff; --muted: #91a1bb; --paper: #07111f; --card: #101e32; --line: #20334e; --accent: #67b7ff; --mint: #173d5c; --green: #55c59a; }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; color: var(--ink); font-family: 'DM Sans', sans-serif; background: radial-gradient(circle at 88% -8%, #12345a 0, transparent 34%), linear-gradient(145deg, #07111f, #0a1728 62%, #081321); padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 
-        header {
-            width: 100%;
-            max-width: 600px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: var(--paper); }
+        ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-        h1 {
-            font-size: 1.5rem;
-            color: #1a1a1a;
-        }
+        #app-content { display: block; }
+        .app { max-width: 1400px; margin: auto; padding: 12px 10px 30px; }
+        header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 12px; }
+        .eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+        h1, h2 { font-family: 'Space Grotesk', sans-serif; letter-spacing: -.04em; }
+        h1 { font-size: clamp(22px, 4vw, 32px); line-height: .95; margin: 4px 0 0; }
 
-        .btn {
-            background-color: #0070f3;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-        }
+        .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+        .date-label { color: var(--muted); font-size: 12px; text-align: right; }
 
-        .btn:hover {
-            background-color: #0051a2;
-        }
+        .tabs { display: flex; gap: 4px; padding: 4px; width: fit-content; margin-bottom: 12px; background: #0d1b2e; border: 1px solid var(--line); border-radius: 10px; }
+        .tab { color: var(--muted); background: transparent; border: 0; border-radius: 6px; padding: 6px 12px; font-weight: 600; cursor: pointer; font-family: inherit; font-size: 13px; }
+        .tab.active { color: var(--ink); background: #1a304b; box-shadow: 0 2px 6px #0005; }
 
-        .btn-danger {
-            background-color: #e53e3e;
-        }
+        .sub-tabs { display: flex; gap: 4px; background: #0d1b2e; border: 1px solid var(--line); border-radius: 8px; padding: 3px; width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+        .sub-tabs::-webkit-scrollbar { display: none; }
+        .sub-tab { color: var(--muted); background: transparent; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+        .sub-tab.active { color: var(--ink); background: #1a304b; }
 
-        .btn-danger:hover {
-            background-color: #c53030;
-        }
+        .view { display: none; animation: appear .2s ease both; }
+        .view.active { display: block; }
+        .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 
-        .container {
-            width: 100%;
-            max-width: 600px;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
+        .week.single-day { display: grid; grid-template-columns: minmax(0, 700px); justify-content: center; }
+        .day { padding: 8px; background: rgba(12, 27, 47, .7); border: 1px solid var(--line); border-radius: 10px; }
+        .day-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+        .day-name { font-weight: 700; font-size: 16px; }
+        .day-date { color: var(--muted); font-size: 12px; }
 
-        /* Overlay Modal */
-        .overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.6);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
+        .timeline { display: flex; flex-direction: column; gap: 3px; }
+        .timeline-row { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 6px; align-items: stretch; min-height: 40px; }
+        .timeline-row.double { min-height: 84px; }
 
-        .modal {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            width: 90%;
-            max-width: 400px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            text-align: center;
-        }
+        .time-column { padding-top: 4px; color: var(--accent); font-size: 9px; font-weight: 700; text-align: right; line-height: 1.2; opacity: 0.95; }
+        .lesson-group { display: grid; grid-template-columns: repeat(var(--lesson-count), minmax(0, 1fr)); gap: 4px; }
 
-        .modal h2 {
-            margin-bottom: 15px;
-        }
+        .pause { display: flex; justify-content: space-between; align-items: center; border: 1px dashed #2f4561; border-left: 0; border-right: 0; color: #7f99b9; padding: 2px 8px; background: repeating-linear-gradient(45deg, rgba(23, 38, 58, 0.2), rgba(23, 38, 58, 0.2) 8px, transparent 8px, transparent 16px); border-radius: 4px; margin: 1px 0; }
+        .pause-text { font-weight: 700; font-size: 11px; }
+        .pause-time { opacity: 0.75; font-size: 10px; font-variant-numeric: tabular-nums; }
 
-        .modal input {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            font-size: 1rem;
-            text-align: center;
-        }
+        .freistunde { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 40px; border: 1px dashed #223652; border-radius: 6px; color: #496382; font-size: 12px; font-weight: 700; background: rgba(16, 30, 50, 0.25); letter-spacing: 0.3px; }
 
-        .error-message {
-            color: #e53e3e;
-            font-size: 0.9rem;
-            margin-top: 10px;
-            display: none;
-        }
+        .lesson { position: relative; padding: 6px 10px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); overflow: hidden; }
+        .timeline-row .lesson { height: 100%; display: flex; flex-direction: column; justify-content: center; }
 
-        .timetable-item {
-            padding: 12px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-        }
+        .lesson.eigenarbeit { background: #0f2e24 !important; border-color: #1e5944 !important; border-left-color: #55c59a !important; }
+        .lesson.entfall { background: #361317 !important; border-color: #612228 !important; border-left-color: #ef5b61 !important; }
+        .lesson.entfall .subject { text-decoration: line-through; opacity: .85; }
+        .lesson.veranstaltung { background: #2b1f42 !important; border-color: #4b3673 !important; border-left-color: #a879dc !important; }
 
-        .timetable-item:last-child {
-            border-bottom: none;
+        .subject { margin: 0 0 2px; font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 700; line-height: 1.1; }
+        .course-line { color: var(--muted); font-size: 11px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .course-label { color: #66809f; font-weight: 600; }
+        .details { color: #e8c85c; font-size: 10px; margin-top: 2px; font-weight: 600; line-height: 1.1; }
+
+        .lesson[data-color="red"] { border-left-color: #ef5b61; }
+        .lesson[data-color="yellow"] { border-left-color: #e8c85c; }
+        .lesson[data-color="blue"] { border-left-color: #5798ee; }
+        .lesson[data-color="green"] { border-left-color: #54bf7b; }
+        .lesson[data-color="orange"] { border-left-color: #ed914b; }
+        .lesson[data-color="lightblue"] { border-left-color: #70d5ed; }
+        .lesson[data-color="dark"] { border-left-color: #8c98a8; }
+        .lesson[data-color="geography"] { border-left-color: #27734a; }
+
+        .all-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+        .all-list .lesson { min-height: 64px; padding-right: 50px; justify-content: center; }
+        .all-list .lesson .switch { position: absolute; right: 10px; top: 10px; transform: scale(.75); transform-origin: top right; }
+        .all-list .lesson.hidden { opacity: .4; }
+
+        #search { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; color: var(--ink); background: var(--card); font: inherit; margin-bottom: 12px; outline: none; font-size: 13px; }
+        .section-title { font-family: 'Space Grotesk', sans-serif; font-size: 15px; color: var(--accent); margin: 20px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+
+        .switch { display: inline-block; position: relative; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; inset: 0; cursor: pointer; background: #344963; border-radius: 30px; transition: .2s; }
+        .slider:before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .2s; }
+        input:checked + .slider { background: var(--green); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        .status-msg { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+        .action-btns { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+        .action-btn { background: #17263a; color: var(--ink); border: none; padding: 8px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 12px; flex: 1; min-width: 120px; }
+        .action-btn.primary { background: var(--mint); color: var(--green); }
+
+        @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+        @media (max-width: 600px) {
+            header { align-items: flex-start; flex-direction: column; margin-bottom: 10px; gap: 6px; }
+            .header-right { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+            .date-label { text-align: left; font-size: 12px; }
+            .timeline-row { grid-template-columns: 46px minmax(0, 1fr); gap: 5px; min-height: 38px; }
+            .timeline-row.double { min-height: 80px; }
+            .time-column { font-size: 8.5px; padding-top: 2px; }
+            .pause { padding: 2px 6px; }
+            .pause-text { font-size: 10.5px; }
+            .pause-time { font-size: 9.5px; }
+            .freistunde { min-height: 38px; font-size: 11.5px; }
+            .subject { font-size: 12.5px; }
+            .course-line { font-size: 10px; }
+            .day { padding: 6px; }
         }
     </style>
 </head>
 <body>
 
-    <!-- Auth Modal -->
-    <div id="authOverlay" class="overlay" style="display: none;">
-        <div class="modal">
-            <h2>Planwerk Lizenz</h2>
-            <p style="margin-bottom: 15px; font-size: 0.9rem; color: #666;">
-                Bitte gebe deinen Lizenzschlüssel ein. Dieser wird fest an dieses Gerät gebunden.
-            </p>
-            <form onsubmit="submitAccessKey(event)">
-                <input type="text" id="accessKeyInput" placeholder="Z. B. PLANWERK-2026" required autocomplete="off">
-                <button type="submit" class="btn" style="width: 100%;">Aktivieren</button>
-            </form>
-            <div id="authError" class="error-message"></div>
-        </div>
-    </div>
-
-    <!-- Main Content -->
+<main class="app" id="app-content">
     <header>
-        <h1>Planwerk 1</h1>
-        <button id="logoutBtn" class="btn btn-danger" style="display: none;" onclick="logout()">Abmelden</button>
+        <div>
+            <div class="eyebrow">Anno-Gymnasium Siegburg</div>
+            <h1>Mein Stundenplan</h1>
+        </div>
+        <div class="header-right">
+            <div class="date-label" id="todayLabel">Persönlicher Überblick</div>
+        </div>
     </header>
 
-    <div class="container">
-        <h2>Dein Stundenplan</h2>
-        <div id="timetableContainer" style="margin-top: 15px;">
-            Lade Stundenplan...
+    <nav class="tabs">
+        <button class="tab active" data-view="schedule">Stundenplan</button>
+        <button class="tab" data-view="courses">Alle Stunden</button>
+    </nav>
+
+    <section class="view active" id="schedule">
+        <div class="toolbar">
+            <div class="sub-tabs" id="dynamic-tabs"></div>
         </div>
-    </div>
+        <div class="week single-day" id="week"></div>
+    </section>
 
-    <script>
-        // Generate or fetch permanent browser/device UUID
-        function getDeviceId() {
-            let deviceId = localStorage.getItem('planwerk_device_id');
-            if (!deviceId) {
-                deviceId = 'dev_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
-                localStorage.setItem('planwerk_device_id', deviceId);
-            }
-            return deviceId;
+    <section class="view" id="courses">
+        <div class="status-msg">Sichtbarkeit der Kurse für deinen Stundenplan festlegen.</div>
+        <div class="action-btns">
+            <button class="action-btn primary" onclick="setAll(true)">Alle einblenden</button>
+            <button class="action-btn" onclick="setAll(false)">Alle ausblenden</button>
+        </div>
+
+        <input id="search" type="search" placeholder="Kurse suchen (z. B. Mathe, SoWi)..." autocomplete="off">
+
+        <div class="section-title">
+            Veranstaltungen
+            <label class="switch">
+                <input type="checkbox" id="toggle-events-master" onchange="toggleEventsMaster(this.checked)">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="status-msg" style="margin-bottom: 18px;">Exkursionen und Events global im Plan anzeigen.</div>
+
+        <div class="section-title">Reguläre Kurse</div>
+        <div class="all-list" id="allLessons"></div>
+    </section>
+</main>
+
+<script>
+    let timetable = [];
+    let userSettings = { hiddenCourses: {}, eventsDisabled: false };
+    let availableDays = [];
+    let currentSelectedDate = '';
+    let refreshInterval = null;
+
+    const scheduleBlocks = [
+        { label: '1. Stunde', start: 800, end: 845 },
+        { pause: 'Pause', start: 845, end: 850 },
+        { label: '2. Stunde', start: 850, end: 935 },
+        { pause: 'Große Pause', start: 935, end: 955 },
+        { label: '3. Stunde', start: 955, end: 1040 },
+        { label: '4. Stunde', start: 1040, end: 1125 },
+        { pause: 'Große Pause', start: 1125, end: 1145 },
+        { label: '5. Stunde', start: 1145, end: 1230 },
+        { label: '6. Stunde', start: 1230, end: 1315 },
+        { pause: 'Pause', start: 1315, end: 1330 },
+        { label: '7. Stunde', start: 1330, end: 1415 },
+        { label: '8. Stunde', start: 1415, end: 1500 },
+        { label: '9. Stunde', start: 1500, end: 1545 },
+        { pause: 'Pause', start: 1545, end: 1600 },
+        { label: '10. Stunde', start: 1600, end: 1700 }
+    ];
+
+    async function initApp() {
+        const savedSettings = localStorage.getItem('planwerk_settings');
+        if (savedSettings) {
+            try { userSettings = JSON.parse(savedSettings); } catch(e) {}
         }
 
-        async function checkAuthStatus() {
-            try {
-                const res = await fetch('/api/auth-status');
-                const data = await res.json();
+        document.getElementById('toggle-events-master').checked = !userSettings.eventsDisabled;
+        setupDynamicTabs();
+        loadTimetable();
 
-                if (data.authenticated) {
-                    document.getElementById('authOverlay').style.display = 'none';
-                    document.getElementById('logoutBtn').style.display = 'block';
-                    loadTimetable();
-                } else {
-                    document.getElementById('authOverlay').style.display = 'flex';
-                    document.getElementById('logoutBtn').style.display = 'none';
-                }
-            } catch (err) {
-                console.error('Fehler bei der Authentifizierungsprüfung:', err);
+        if (!refreshInterval) {
+            refreshInterval = setInterval(() => {
+                loadTimetable(true);
+            }, 30000);
+        }
+    }
+
+    async function loadTimetable(isBackground = false) {
+        if (!isBackground) {
+            document.getElementById('week').innerHTML = '<div style="color:var(--muted); padding: 15px; text-align:center;">Lade Stundenplan...</div>';
+        }
+        try {
+            const response = await fetch('/api/timetable');
+            const freshData = await response.json();
+
+            if (!response.ok) {
+                throw new Error(freshData.error || `HTTP Fehler ${response.status}`);
+            }
+
+            // Wichtig: greife auf .timetable zu, da der Server ein Objekt zurückgibt
+            timetable = Array.isArray(freshData) ? freshData : (freshData.timetable || []);
+            renderAll();
+        } catch (error) {
+            console.error(error);
+            if (!isBackground) {
+                document.getElementById('week').innerHTML = `<div style="color:#ef5b61; padding: 15px; text-align:center;">Verbindung fehlgeschlagen: ${error.message}</div>`;
             }
         }
+    }
 
-        async function submitAccessKey(e) {
-            e.preventDefault();
-            const key = document.getElementById('accessKeyInput').value.trim();
-            const errorEl = document.getElementById('authError');
-            errorEl.style.display = 'none';
+    async function saveSettings() {
+        localStorage.setItem('planwerk_settings', JSON.stringify(userSettings));
+    }
 
-            try {
-                const response = await fetch('/api/verify-key', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        key: key, 
-                        deviceId: getDeviceId() 
-                    })
-                });
+    function setupDynamicTabs() {
+        const tabsContainer = document.getElementById('dynamic-tabs');
+        tabsContainer.innerHTML = '';
+        availableDays = [];
 
-                const data = await response.json();
+        let curr = new Date();
+        const weekDays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
 
-                if (response.ok && data.success) {
-                    document.getElementById('authOverlay').style.display = 'none';
-                    document.getElementById('logoutBtn').style.display = 'block';
-                    loadTimetable();
-                } else {
-                    errorEl.textContent = data.error || 'Ungültiger Lizenzschlüssel!';
-                    errorEl.style.display = 'block';
-                }
-            } catch (err) {
-                errorEl.textContent = 'Verbindungsfehler zum Server.';
-                errorEl.style.display = 'block';
+        while (availableDays.length < 5) {
+            if (curr.getDay() !== 0 && curr.getDay() !== 6) {
+                let label = weekDays[curr.getDay()];
+                if (availableDays.length === 0) label = "Heute";
+                else if (availableDays.length === 1) label = "Morgen";
+
+                availableDays.push({ date: formatDateYYYYMMDD(curr), label: label });
             }
+            curr.setDate(curr.getDate() + 1);
         }
 
-        async function loadTimetable() {
-            const container = document.getElementById('timetableContainer');
-            container.innerHTML = 'Lade aktuellen Stundenplan...';
+        currentSelectedDate = availableDays[0].date;
 
-            try {
-                const res = await fetch('/api/timetable');
-                const data = await res.json();
+        availableDays.forEach((day, index) => {
+            const btn = document.createElement('button');
+            btn.className = `sub-tab ${index === 0 ? 'active' : ''}`;
+            btn.textContent = day.label;
+            btn.onclick = () => {
+                document.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentSelectedDate = day.date;
+                renderSchedule();
+            };
+            tabsContainer.appendChild(btn);
+        });
+    }
 
-                if (res.ok && data.timetable) {
-                    if (data.timetable.length === 0) {
-                        container.innerHTML = '<p>Keine Unterrichtsstunden für heute gefunden.</p>';
-                        return;
-                    }
+    function value(lesson, group, key) { return lesson[group]?.[0]?.[key] || ''; }
+    function cleanSubjectName(name) { return (name||'').replace(/sozialwissenschaften|sozialwissensch\.|sozialwiss/gi, 'SoWi').replace(/bilingual/gi, 'bili'); }
+    function subjectOf(lesson, isShort = false) { return isShort ? cleanSubjectName(value(lesson, 'su', 'name')) : cleanSubjectName(value(lesson, 'su', 'longname') || value(lesson, 'su', 'name') || 'Unbekannt'); }
 
-                    container.innerHTML = data.timetable.map(lesson => `
-                        <div class="timetable-item">
-                            <span><strong>${lesson.su ? lesson.su[0].name : 'Unterricht'}</strong></span>
-                            <span>${lesson.kl ? lesson.kl[0].name : ''} (${lesson.ro ? lesson.ro[0].name : 'Raum k.A.'})</span>
-                        </div>
-                    `).join('');
-                } else {
-                    container.innerHTML = `<p style="color:red;">${data.error || 'Fehler beim Abrufen des Stundenplans.'}</p>`;
-                }
-            } catch (err) {
-                container.innerHTML = '<p style="color:red;">Netzwerkfehler beim Laden des Stundenplans.</p>';
-            }
+    function subjectColor(lesson) {
+        const sub = `${subjectOf(lesson)} ${value(lesson, 'su', 'name')}`.toLowerCase();
+        if (/\b(deutsch|d)\b/.test(sub)) return 'red';
+        if (/\b(englisch|e)\b/.test(sub)) return 'yellow';
+        if (/\b(mathe|m)\b/.test(sub)) return 'blue';
+        if (sub.includes('sport')) return 'lightblue';
+        if (sub.includes('biolog')) return 'green';
+        if (sub.includes('chem') || sub.includes('sowi')) return 'orange';
+        if (sub.includes('informat')) return 'dark';
+        if (sub.includes('erdkunde') || /\bgeo\b/.test(sub)) return 'geography';
+        return 'default';
+    }
+
+    function formatTime(v) { const t = String(v || '').padStart(4, '0'); return t.slice(0, 2) + ':' + t.slice(2); }
+    function formatDate(v) { const t = String(v || ''); return t.length === 8 ? `${t.slice(6)}.${t.slice(4, 6)}.${t.slice(0, 4)}` : ''; }
+    function formatDateYYYYMMDD(d) { return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; }
+    function timeToMins(t) { const n = Number(t || 0); return Math.floor(n / 100) * 60 + (n % 100); }
+
+    function teacherOf(lesson) { return (value(lesson, 'te', 'name') || value(lesson, 'te', 'longname') || '-').split(' · ')[0].split(' ')[0]; }
+    function roomOf(lesson) { return value(lesson, 'ro', 'name') || value(lesson, 'ro', 'longname') || '-'; }
+    function courseOf(lesson) { return lesson.sg || value(lesson, 'kl', 'name') || ''; }
+    function courseKey(lesson) { return `${subjectOf(lesson)}|${courseOf(lesson)}|${teacherOf(lesson)}`; }
+
+    function isEigenarbeit(lesson) {
+        const txt = `${lesson.substText||''} ${lesson.activityType||''}`.toLowerCase();
+        const teacher = teacherOf(lesson);
+        return teacher === '---' || teacher === '' || teacher === '-' || txt.includes('eigenarbeit') || txt.includes('eva');
+    }
+
+    function isEntfall(lesson) {
+        const txt = `${lesson.substText||''} ${lesson.activityType||''}`.toLowerCase();
+        return txt.includes('entfall') || lesson.code === 'cancelled';
+    }
+
+    function isEvent(lesson) { const txt = `${lesson.substText||''} ${lesson.activityType||''}`.toLowerCase(); return txt.includes('veranstaltung') || txt.includes('exkursion') || lesson.lstype === 'ls' || lesson.activityType === 'Event'; }
+
+    function isSpecialLesson(lesson) {
+        return isEntfall(lesson) || isEigenarbeit(lesson) || teacherOf(lesson) === '---' || teacherOf(lesson) === '' || teacherOf(lesson) === '-';
+    }
+
+    function isSameCourse(lessonA, lessonB) {
+        const subA = subjectOf(lessonA, true).toLowerCase();
+        const subB = subjectOf(lessonB, true).toLowerCase();
+        if (subA !== subB) return false;
+
+        const cA = (courseOf(lessonA) || '').toLowerCase();
+        const cB = (courseOf(lessonB) || '').toLowerCase();
+
+        if (!cA || !cB) return true;
+
+        const pA = cA.slice(0, 7);
+        const pB = cB.slice(0, 7);
+        return pA === pB || cA.includes(pB) || cB.includes(pA);
+    }
+
+    function isEnabled(lesson) {
+        if (isEvent(lesson)) return !userSettings.eventsDisabled;
+
+        const directKey = courseKey(lesson);
+
+        if (isSpecialLesson(lesson)) {
+            const matchingEnabledCourse = timetable.some(ref => {
+                if (isSpecialLesson(ref)) return false;
+                if (!isSameCourse(lesson, ref)) return false;
+                return userSettings.hiddenCourses[courseKey(ref)] !== true;
+            });
+
+            if (matchingEnabledCourse) return true;
         }
 
-        async function logout() {
-            try {
-                await fetch('/api/logout', { method: 'POST' });
-                location.reload();
-            } catch (err) {
-                alert('Fehler beim Abmelden.');
-            }
-        }
+        return userSettings.hiddenCourses[directKey] !== true;
+    }
 
-        // Initialize application check
-        checkAuthStatus();
-    </script>
+    function matchesCoursePrefix(lessonA, lessonB) {
+        return isSameCourse(lessonA, lessonB);
+    }
+
+    function toggleCourse(key, enabled) {
+        if (!userSettings.hiddenCourses) userSettings.hiddenCourses = {};
+        userSettings.hiddenCourses[key] = !enabled;
+        saveSettings();
+        renderAll();
+    }
+
+    function toggleEventsMaster(enabled) {
+        userSettings.eventsDisabled = !enabled;
+        saveSettings();
+        renderAll();
+    }
+
+    function setAll(enabled) {
+        userSettings.hiddenCourses = {};
+        if(!enabled) {
+            timetable.forEach(lesson => {
+                if(!isEvent(lesson)) userSettings.hiddenCourses[courseKey(lesson)] = true;
+            });
+        }
+        document.getElementById('toggle-events-master').checked = enabled;
+        userSettings.eventsDisabled = !enabled;
+        saveSettings();
+        renderAll();
+    }
+
+    function combineLessons(lessons) {
+        const combined = [];
+        const sorted = lessons.slice().sort((a, b) => Number(a.startTime) - Number(b.startTime));
+
+        sorted.forEach(lesson => {
+            const match = combined.find(prev => {
+                const prevEnd = timeToMins(prev.endTime), currStart = timeToMins(lesson.startTime);
+                return prev.su?.[0]?.name === lesson.su?.[0]?.name && (currStart - prevEnd) <= 25 && (timeToMins(lesson.endTime) - timeToMins(prev.startTime)) <= 105;
+            });
+            if (match) {
+                match.endTime = Math.max(Number(match.endTime), Number(lesson.endTime));
+                if (lesson.substText && !match.substText.includes(lesson.substText)) match.substText = [match.substText, lesson.substText].filter(Boolean).join(' | ');
+            } else combined.push({ ...lesson });
+        });
+        return combined.sort((a, b) => Number(a.startTime) - Number(b.startTime));
+    }
+
+    function lessonCard(lesson, isShort = false) {
+        const card = document.createElement('article');
+        let statusClass = isEvent(lesson) ? 'veranstaltung' : isEigenarbeit(lesson) ? 'eigenarbeit' : isEntfall(lesson) ? 'entfall' : '';
+
+        card.className = `lesson ${statusClass}`;
+        card.dataset.color = subjectColor(lesson);
+
+        const subj = isEvent(lesson) ? (lesson.substText || subjectOf(lesson)) : subjectOf(lesson, isShort);
+        const displayTeacher = isEigenarbeit(lesson) ? '---' : teacherOf(lesson);
+
+        card.innerHTML = `<div class="subject">${subj}</div><div class="course-line"><span class="course-label">Lehr:</span> ${displayTeacher}</div><div class="course-line"><span class="course-label">Raum:</span> ${roomOf(lesson)}</div>${lesson.substText && !isEvent(lesson) ? `<div class="details">${lesson.substText}</div>` : ''}`;
+        return card;
+    }
+
+    function courseOverviewCard(lesson) {
+        const key = courseKey(lesson);
+        const enabled = userSettings.hiddenCourses[key] !== true;
+        const card = document.createElement('article');
+        card.className = `lesson ${enabled ? '' : 'hidden'}`;
+        card.dataset.color = subjectColor(lesson);
+
+        const cStr = courseOf(lesson), sStr = subjectOf(lesson);
+        const titleText = (cStr && !sStr.toLowerCase().includes(cStr.toLowerCase())) ? `${sStr} (${cStr})` : sStr;
+
+        card.innerHTML = `<div class="subject">${titleText}</div><div class="course-line"><span class="course-label">Lehr:</span> ${teacherOf(lesson)}</div><div class="course-line"><span class="course-label">Raum:</span> ${roomOf(lesson)}</div>
+            <label class="switch"><input type="checkbox" ${enabled ? 'checked' : ''}><span class="slider"></span></label>`;
+
+        card.querySelector('input').addEventListener('change', e => toggleCourse(key, e.target.checked));
+        return card;
+    }
+
+    function renderSchedule() {
+        const week = document.getElementById('week');
+        week.innerHTML = '';
+
+        const allDayLessons = timetable.filter(l => String(l.date || l.startDate) === currentSelectedDate);
+
+        const activeDayLessons = allDayLessons.filter(l => isEnabled(l)).map(lesson => {
+            const eigenarbeitOverride = allDayLessons.find(alt => {
+                if (alt === lesson) return false;
+                const sameTime = Number(alt.startTime) === Number(lesson.startTime);
+                const courseMatch = matchesCoursePrefix(alt, lesson);
+                return sameTime && courseMatch && isEigenarbeit(alt);
+            });
+
+            if (eigenarbeitOverride || isEigenarbeit(lesson)) {
+                return {
+                    ...lesson,
+                    teachers: [{ id: 0, name: '---', longname: '---' }],
+                    substText: eigenarbeitOverride?.substText || lesson.substText || 'Eigenarbeit',
+                    activityType: 'Eigenarbeit'
+                };
+            }
+            return lesson;
+        });
+
+        const combinedLessons = combineLessons(activeDayLessons);
+
+        const dayObj = availableDays.find(d => d.date === currentSelectedDate);
+        if (!dayObj) return;
+
+        const day = document.createElement('section');
+        day.className = 'day';
+        day.innerHTML = `<div class="day-head"><span class="day-name">${dayObj.label}</span><span class="day-date">${formatDate(currentSelectedDate)}</span></div><div class="timeline"></div>`;
+        const timeline = day.querySelector('.timeline');
+
+        let coveredUntil = 0;
+
+        scheduleBlocks.forEach(block => {
+            if (block.pause) {
+                const durationMins = timeToMins(block.end) - timeToMins(block.start);
+                timeline.innerHTML += `
+                <div class="pause">
+                    <span class="pause-text">${block.pause} (${durationMins} Min)</span>
+                    <span class="pause-time">${formatTime(block.start)} - ${formatTime(block.end)}</span>
+                </div>`;
+                return;
+            }
+
+            const blockStartMins = timeToMins(block.start);
+            const blockEndMins = timeToMins(block.end);
+
+            if (blockStartMins < coveredUntil) return;
+
+            const bL = combinedLessons.filter(l => timeToMins(l.startTime) < blockEndMins && timeToMins(l.endTime) > blockStartMins);
+
+            if (!bL.length) {
+                timeline.innerHTML += `
+                <div class="timeline-row">
+                    <div class="time-column">${block.label}<br>${formatTime(block.start)}</div>
+                    <div class="lesson-group" style="--lesson-count: 1">
+                        <div class="freistunde">Freistunde</div>
+                    </div>
+                </div>`;
+                return;
+            }
+
+            const maxEndTime = Math.max(...bL.map(l => timeToMins(l.endTime)));
+            const double = maxEndTime - blockStartMins >= 80;
+
+            let displayLabel = block.label;
+            if (double) {
+                const hourNum = parseInt(block.label.replace(/\D/g, ''));
+                if (!isNaN(hourNum)) displayLabel = `${hourNum}. - ${hourNum + 1}. Stunde`;
+                coveredUntil = maxEndTime;
+            } else {
+                coveredUntil = blockEndMins;
+            }
+
+            const row = document.createElement('div');
+            row.className = `timeline-row${double ? ' double' : ''}`;
+            row.innerHTML = `<div class="time-column">${displayLabel}<br>${formatTime(block.start)}</div><div class="lesson-group" style="--lesson-count:${bL.length}"></div>`;
+
+            const group = row.querySelector('.lesson-group');
+            bL.forEach(l => group.appendChild(lessonCard(l, true)));
+            timeline.appendChild(row);
+        });
+
+        week.appendChild(day);
+    }
+
+    function renderCourses() {
+        const list = document.getElementById('allLessons');
+        const query = document.getElementById('search').value.trim().toLowerCase();
+
+        const unique = new Map();
+        timetable.forEach(l => { if(!isEvent(l) && !unique.has(courseKey(l))) unique.set(courseKey(l), l); });
+
+        const matches = Array.from(unique.values()).filter(l => !query || `${subjectOf(l)} ${courseOf(l)} ${teacherOf(l)}`.toLowerCase().includes(query));
+        list.innerHTML = '';
+        matches.sort((a,b) => subjectOf(a).localeCompare(subjectOf(b))).forEach(l => list.appendChild(courseOverviewCard(l)));
+        if (!matches.length) list.innerHTML = '<div style="color:var(--muted); padding:10px;">Keine passenden Kurse gefunden.</div>';
+    }
+
+    function renderAll() { renderSchedule(); renderCourses(); }
+
+    document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+        document.querySelectorAll('.tab, .view').forEach(e => e.classList.remove('active'));
+        t.classList.add('active');
+        document.getElementById(t.dataset.view).classList.add('active');
+    }));
+
+    document.getElementById('search').addEventListener('input', renderCourses);
+    document.getElementById('todayLabel').textContent = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+
+    initApp();
+</script>
 </body>
 </html>
 
