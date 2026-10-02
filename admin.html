@@ -80,6 +80,13 @@
                 body: JSON.stringify({ adminSecret, newKey })
             });
 
+            // Sicherstellen, dass die Antwort JSON ist
+            const contentType = res.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                const text = await res.text();
+                throw new Error(`Serverfehler (${res.status}): Server gab kein JSON zurück.`);
+            }
+
             const data = await res.json();
 
             if (res.ok && data.success) {
@@ -92,7 +99,7 @@
             }
         } catch (err) {
             resultEl.style.color = 'red';
-            resultEl.textContent = '❌ Verbindung zum Server fehlgeschlagen.';
+            resultEl.textContent = '❌ ' + err.message;
         }
     });
 </script>
