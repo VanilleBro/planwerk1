@@ -102,6 +102,16 @@
         .action-btn { background: #17263a; color: var(--ink); border: none; padding: 8px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 12px; flex: 1; min-width: 120px; }
         .action-btn.primary { background: var(--mint); color: var(--green); }
 
+        /* Modal für Lizenzschlüssel */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .modal-box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; max-width: 400px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .modal-title { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin-top: 0; margin-bottom: 8px; color: var(--ink); }
+        .modal-desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; line-height: 1.4; }
+        .modal-input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; color: var(--ink); background: var(--paper); font: inherit; font-size: 14px; margin-bottom: 16px; outline: none; }
+        .modal-input:focus { border-color: var(--accent); }
+        .modal-btn { width: 100%; background: #1f4a70; color: var(--ink); border: none; padding: 10px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+        .modal-btn:hover { background: #285e8e; }
+
         @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
         @media (max-width: 600px) {
@@ -131,6 +141,7 @@
         </div>
         <div class="header-right">
             <div class="date-label" id="todayLabel">Persönlicher Überblick</div>
+            <button class="action-btn" style="padding: 4px 8px; font-size: 10px; margin-top: 4px;" onclick="promptLicenseKey()">Lizenz ändern</button>
         </div>
     </header>
 
@@ -169,12 +180,23 @@
     </section>
 </main>
 
+<!-- Lizenzschlüssel Modal -->
+<div id="licenseModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box">
+        <h2 class="modal-title">Lizenzschlüssel erforderlich</h2>
+        <div class="modal-desc" id="licenseModalDesc">Bitte gib deinen Lizenzschlüssel ein, um den Stundenplan zu laden.</div>
+        <input type="password" id="licenseInput" class="modal-input" placeholder="Lizenzschlüssel hier eingeben..." autocomplete="off">
+        <button class="modal-btn" onclick="saveAndApplyLicense()">Speichern & Fortfahren</button>
+    </div>
+</div>
+
 <script>
     let timetable = [];
     let userSettings = { hiddenCourses: {}, eventsDisabled: false };
     let availableDays = [];
     let currentSelectedDate = '';
     let refreshInterval = null;
+    let licenseKey = localStorage.getItem('planwerk_license') || '';
 
     const scheduleBlocks = [
         { label: '1. Stunde', start: 800, end: 845 },
@@ -202,12 +224,41 @@
 
         document.getElementById('toggle-events-master').checked = !userSettings.eventsDisabled;
         setupDynamicTabs();
-        loadTimetable();
+
+        if (!licenseKey) {
+            showLicenseModal('Zugriff verweigert. Bitte Lizenzschlüssel eingeben.');
+        } else {
+            loadTimetable();
+        }
 
         if (!refreshInterval) {
             refreshInterval = setInterval(() => {
-                loadTimetable(true);
+                if (licenseKey) loadTimetable(true);
             }, 30000);
+        }
+    }
+
+    function showLicenseModal(msg) {
+        if (msg) document.getElementById('licenseModalDesc').textContent = msg;
+        document.getElementById('licenseInput').value = licenseKey;
+        document.getElementById('licenseModal').style.display = 'flex';
+    }
+
+    function hideLicenseModal() {
+        document.getElementById('licenseModal').style.display = 'none';
+    }
+
+    function promptLicenseKey() {
+        showLicenseModal('Lizenzschlüssel bearbeiten oder erneuern:');
+    }
+
+    function saveAndApplyLicense() {
+        const val = document.getElementById('licenseInput').value.trim();
+        if (val) {
+            licenseKey = val;
+            localStorage.setItem('planwerk_license', licenseKey);
+            hideLicenseModal();
+            loadTimetable();
         }
     }
 
@@ -216,14 +267,26 @@
             document.getElementById('week').innerHTML = '<div style="color:var(--muted); padding: 15px; text-align:center;">Lade Stundenplan...</div>';
         }
         try {
-            const response = await fetch('/api/timetable');
+            // Sende Lizenzschlüssel sowohl in Headers als auch in der Query-URL mit
+            const url = `/api/timetable?key=${encodeURIComponent(licenseKey)}&license=${encodeURIComponent(licenseKey)}`;
+            const response = await fetch(url, {
+                headers: {
+                    'X-License-Key': licenseKey,
+                    'Authorization': `Bearer ${licenseKey}`
+                }
+            });
+
             const freshData = await response.json();
 
-            if (!response.ok) {
-                throw new Error(freshData.error || `HTTP Fehler ${response.status}`);
+            if (!response.ok || freshData.success === false) {
+                const errMsg = freshData.error || `HTTP Fehler ${response.status}`;
+                if (response.status === 401 || response.status === 403 || errMsg.includes('Lizenz') || errMsg.includes('Zugriff verweigert')) {
+                    showLicenseModal(errMsg);
+                    return;
+                }
+                throw new Error(errMsg);
             }
 
-            // Wichtig: greife auf .timetable zu, da der Server ein Objekt zurückgibt
             timetable = Array.isArray(freshData) ? freshData : (freshData.timetable || []);
             renderAll();
         } catch (error) {
