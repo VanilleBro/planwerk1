@@ -3,25 +3,16 @@
   "builds": [
     {
       "src": "server.mjs",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["admin.html", "index.html"]
+      }
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/server.mjs"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/server.mjs"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "server.mjs"
     }
   ]
 }

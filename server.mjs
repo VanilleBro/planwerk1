@@ -1,4 +1,4 @@
-import 'dotenv/config'; // <-- ADD THIS LINE AT THE TOP
+import 'dotenv/config';
 import express from 'express';
 import { WebUntis } from 'webuntis';
 import path from 'path';
@@ -13,17 +13,21 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize Upstash Redis Database
-const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+// Sichere Redis-Initialisierung (verhindert Totalabsturz auf Vercel, falls Env-Variablen fehlen)
+let redis = null;
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    redis = new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+} else {
+    console.error('⚠️ WARNUNG: UPSTASH_REDIS_REST_URL oder TOKEN fehlt in den Umgebungsvariablen!');
+}
 
 // Middleware
-app.use(express.static(__dirname));
 app.use(express.json());
 
-// Explicit Routes for Admin Page
+// Explizite Routen für Admin-Seite
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
 });
@@ -31,6 +35,9 @@ app.get('/admin', (req, res) => {
 app.get('/admin.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
 });
+
+// Statische Dateien ausliefern
+app.use(express.static(__dirname));
 
 // Session Configuration
 app.use(session({
@@ -78,6 +85,10 @@ app.get('/api/auth-status', (req, res) => {
 
 app.post('/api/verify-key', async (req, res) => {
     try {
+        if (!redis) {
+            return res.status(500).json({ error: 'Datenbank nicht konfiguriert. Bitte Umgebungsvariablen in Vercel prüfen.' });
+        }
+
         const { key, deviceId } = req.body;
 
         if (!key || !deviceId) {
@@ -89,7 +100,7 @@ app.post('/api/verify-key', async (req, res) => {
         // Key aus der Redis-Datenbank abrufen
         let keyInfo = await redis.get(`key:${trimmedKey}`);
 
-        // Standard-Demokey automatisch anlegen, falls noch nicht in DB
+        // Standard-Demokey automatisch anlegen
         if (!keyInfo) {
             if (trimmedKey === 'DEMO-KEY-123' || trimmedKey === 'PLANWERK-2026') {
                 keyInfo = { usedBy: null, activatedAt: null };
@@ -100,7 +111,7 @@ app.post('/api/verify-key', async (req, res) => {
         }
 
         if (keyInfo.usedBy === null) {
-            // Erste Aktivierung -> Key an diese deviceId binden
+            // Erste Aktivierung -> Key an dieses Gerät binden
             keyInfo.usedBy = deviceId;
             keyInfo.activatedAt = new Date().toISOString();
             await redis.set(`key:${trimmedKey}`, keyInfo);
@@ -128,6 +139,10 @@ app.post('/api/verify-key', async (req, res) => {
 // Admin Endpoint: Neue Kunden-Keys erstellen
 app.post('/api/admin/create-key', async (req, res) => {
     try {
+        if (!redis) {
+            return res.status(500).json({ error: 'Datenbank nicht konfiguriert. Bitte Umgebungsvariablen prüfen.' });
+        }
+
         const { adminSecret, newKey } = req.body;
 
         if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
@@ -192,12 +207,6 @@ app.post('/api/subscribe', requireAuth, (req, res) => {
     pushSubscriptions.push(subscription);
     res.status(201).json({ success: true });
 });
-
-app.listen(PORT, () => {
-    console.log(`Planwerk Server läuft auf Port ${PORT}`);
-});
-
-// ... rest of your server.mjs code above ...
 
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
