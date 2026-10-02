@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planwerk Admin - Schlüssel Erstellen</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f4f6f8;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        h2 { margin-bottom: 20px; font-size: 1.4rem; text-align: center; }
+        label { display: block; margin-top: 10px; font-size: 0.9rem; font-weight: bold; }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 20px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background: #0051a2; }
+        #result { margin-top: 15px; text-align: center; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🔑 Neuen Key Erstellen</h2>
+    <form id="keyForm">
+        <label>Admin Passwort (ADMIN_SECRET):</label>
+        <input type="password" id="adminSecret" placeholder="Dein Admin Passwort aus .env" required>
+
+        <label>Neuer Lizenzschlüssel:</label>
+        <input type="text" id="newKey" placeholder="Z. B. CUSTOMER-2026" required>
+
+        <button type="submit">In Datenbank Speichern</button>
+    </form>
+    <div id="result"></div>
+</div>
+
+<script>
+    document.getElementById('keyForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const adminSecret = document.getElementById('adminSecret').value;
+        const newKey = document.getElementById('newKey').value;
+        const resultEl = document.getElementById('result');
+
+        resultEl.style.color = '#333';
+        resultEl.textContent = 'Speichere in Datenbank...';
+
+        try {
+            const res = await fetch('/api/admin/create-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ adminSecret, newKey })
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                resultEl.style.color = 'green';
+                resultEl.textContent = '✅ ' + data.message;
+                document.getElementById('newKey').value = '';
+            } else {
+                resultEl.style.color = 'red';
+                resultEl.textContent = '❌ ' + (data.error || 'Fehler beim Speichern');
+            }
+        } catch (err) {
+            resultEl.style.color = 'red';
+            resultEl.textContent = '❌ Verbindung zum Server fehlgeschlagen.';
+        }
+    });
+</script>
+
+</body>
+</html>
+
