@@ -12,15 +12,24 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize Upstash Redis Client
+// Initialize Upstash Redis Database
 const redis = new Redis({
     url: process.env.UPSTASH_REDIS_REST_URL,
     token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-// Serve static files and parse JSON bodies
+// Middleware
 app.use(express.static(__dirname));
 app.use(express.json());
+
+// Explicit Routes for Admin Page
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+app.get('/admin.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
 
 // Session Configuration
 app.use(session({
@@ -28,12 +37,12 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Tage
         httpOnly: true
     }
 }));
 
-// WebUntis Credentials Configuration
+// WebUntis Configuration
 const UNTIS_CONFIG = {
     school: process.env.UNTIS_SCHOOL || 'demo-school',
     username: process.env.UNTIS_USER || 'demo-user',
@@ -60,7 +69,7 @@ function requireAuth(req, res, next) {
 }
 
 // -------------------------------------------------------------
-// Authentication Endpoints (Database-backed)
+// Authentication Endpoints
 // -------------------------------------------------------------
 app.get('/api/auth-status', (req, res) => {
     res.json({ authenticated: !!(req.session && req.session.authenticated) });
@@ -76,10 +85,10 @@ app.post('/api/verify-key', async (req, res) => {
 
         const trimmedKey = key.trim();
 
-        // Retrieve key info from Redis database
+        // Key aus der Redis-Datenbank abrufen
         let keyInfo = await redis.get(`key:${trimmedKey}`);
 
-        // Auto-seed demo keys if requested for the first time
+        // Standard-Demokey automatisch anlegen, falls noch nicht in DB
         if (!keyInfo) {
             if (trimmedKey === 'DEMO-KEY-123' || trimmedKey === 'PLANWERK-2026') {
                 keyInfo = { usedBy: null, activatedAt: null };
@@ -90,7 +99,7 @@ app.post('/api/verify-key', async (req, res) => {
         }
 
         if (keyInfo.usedBy === null) {
-            // First activation -> Bind key to deviceId in database
+            // Erste Aktivierung -> Key an diese deviceId binden
             keyInfo.usedBy = deviceId;
             keyInfo.activatedAt = new Date().toISOString();
             await redis.set(`key:${trimmedKey}`, keyInfo);
@@ -99,35 +108,43 @@ app.post('/api/verify-key', async (req, res) => {
             req.session.deviceId = deviceId;
             return res.json({ success: true, message: 'Schlüssel erfolgreich an dieses Gerät gebunden!' });
         } else if (keyInfo.usedBy === deviceId) {
-            // Same device returning -> Allow access
+            // Selbes Gerät -> Zugang gewähren
             req.session.authenticated = true;
             req.session.deviceId = deviceId;
             return res.json({ success: true, message: 'Willkommen zurück!' });
         } else {
-            // Key already bound to a different device -> Reject
+            // Bereits auf anderem Gerät aktiviert -> Sperren
             return res.status(403).json({ 
                 error: 'Dieser Schlüssel wurde bereits auf einem anderen Gerät eingelöst!' 
             });
         }
     } catch (err) {
-        console.error('Database Connection Error:', err);
-        return res.status(500).json({ error: 'Fehler bei der Datenbankverbindung.' });
+        console.error('Datenbank-Fehler:', err);
+        return res.status(500).json({ error: 'Fehler bei der Verbindung zur Datenbank.' });
     }
 });
 
-// Admin Endpoint: Add new customer keys to database
+// Admin Endpoint: Neue Kunden-Keys erstellen
 app.post('/api/admin/create-key', async (req, res) => {
-    const { adminSecret, newKey } = req.body;
-    if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
-        return res.status(403).json({ error: 'Nicht autorisiert.' });
-    }
-    if (!newKey) {
-        return res.status(400).json({ error: 'Schlüssel erforderlich.' });
-    }
+    try {
+        const { adminSecret, newKey } = req.body;
 
-    const trimmedKey = newKey.trim();
-    await redis.set(`key:${trimmedKey}`, { usedBy: null, activatedAt: null });
-    return res.json({ success: true, message: `Schlüssel '${trimmedKey}' in Datenbank gespeichert.` });
+        if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+            return res.status(403).json({ error: 'Nicht autorisiert. Falsches Admin-Passwort.' });
+        }
+
+        if (!newKey || !newKey.trim()) {
+            return res.status(400).json({ error: 'Schlüssel darf nicht leer sein.' });
+        }
+
+        const trimmedKey = newKey.trim();
+        await redis.set(`key:${trimmedKey}`, { usedBy: null, activatedAt: null });
+
+        return res.json({ success: true, message: `Schlüssel '${trimmedKey}' erfolgreich gespeichert!` });
+    } catch (err) {
+        console.error('Admin Key Creation Error:', err);
+        return res.status(500).json({ error: 'Fehler beim Erstellen des Schlüssels.' });
+    }
 });
 
 app.post('/api/logout', (req, res) => {
