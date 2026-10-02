@@ -27,6 +27,31 @@ if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) 
 // Middleware
 app.use(express.json());
 
+// CORS Header für API-Anfragen
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, Authorization');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
+// Route für Web-App Manifest (verhindert 404 Fehler)
+app.get('/manifest.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.json({
+        name: "Planwerk | Mein Stundenplan",
+        short_name: "Planwerk",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#07111f",
+        theme_color: "#07111f",
+        orientation: "portrait"
+    });
+});
+
 // Explizite Routen für Admin-Seite
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
@@ -68,11 +93,46 @@ webpush.setVapidDetails(
 
 let pushSubscriptions = [];
 
-// Auth Middleware
-function requireAuth(req, res, next) {
+// Auth Middleware (Erweitert: Akzeptiert Session ODER direkten Lizenzschlüssel per Header/Query)
+async function requireAuth(req, res, next) {
+    // 1. Authentifizierung über aktive Session
     if (req.session && req.session.authenticated) {
         return next();
     }
+
+    // 2. Authentifizierung über mitgeschickten Lizenzschlüssel (Header / Query / Bearer)
+    const authHeader = req.headers['authorization'] || '';
+    const bearerKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
+    const providedKey = (
+        req.headers['x-license-key'] ||
+        bearerKey ||
+        req.query?.key ||
+        req.query?.license ||
+        ''
+    ).toString().trim();
+
+    if (providedKey) {
+        const envKey = (process.env.LICENSE_KEY || process.env.KEY || 'TEST99911').trim();
+        
+        // Prüfe gegen Env-Variablen oder Standard-Keys
+        if (providedKey === envKey || providedKey === 'DEMO-KEY-123' || providedKey === 'PLANWERK-2026') {
+            return next();
+        }
+
+        // Prüfe gegen Redis-Datenbank
+        if (redis) {
+            try {
+                const keyInfo = await redis.get(`key:${providedKey}`);
+                if (keyInfo) {
+                    return next();
+                }
+            } catch (err) {
+                console.error('Redis Auth Check Error:', err);
+            }
+        }
+    }
+
     return res.status(401).json({ error: 'Zugriff verweigert. Bitte Lizenzschlüssel eingeben.' });
 }
 
@@ -102,7 +162,8 @@ app.post('/api/verify-key', async (req, res) => {
 
         // Standard-Demokey automatisch anlegen
         if (!keyInfo) {
-            if (trimmedKey === 'DEMO-KEY-123' || trimmedKey === 'PLANWERK-2026') {
+            const envKey = (process.env.LICENSE_KEY || process.env.KEY || 'TEST99911').trim();
+            if (trimmedKey === 'DEMO-KEY-123' || trimmedKey === 'PLANWERK-2026' || trimmedKey === envKey) {
                 keyInfo = { usedBy: null, activatedAt: null };
                 await redis.set(`key:${trimmedKey}`, keyInfo);
             } else {

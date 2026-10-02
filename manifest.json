@@ -1,16 +1,10 @@
 {
-  "short_name": "WebUntisAPI",
-  "name": "WebUntisAPI Stundenplan",
-  "icons": [
-    {
-      "src": "https://cdn-icons-png.flaticon.com/512/2693/2693507.png",
-      "type": "image/png",
-      "sizes": "512x512"
-    }
-  ],
+  "name": "Planwerk | Mein Stundenplan",
+  "short_name": "Planwerk",
   "start_url": "/",
+  "display": "standalone",
   "background_color": "#07111f",
   "theme_color": "#07111f",
-  "display": "standalone"
+  "orientation": "portrait"
 }
 
