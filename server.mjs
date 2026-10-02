@@ -197,3 +197,13 @@ app.listen(PORT, () => {
     console.log(`Planwerk Server läuft auf Port ${PORT}`);
 });
 
+// ... rest of your server.mjs code above ...
+
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Planwerk Server läuft auf Port ${PORT}`);
+    });
+}
+
+export default app;
+

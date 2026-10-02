@@ -17,6 +17,10 @@
     },
     {
       "src": "/(.*)",
+      "dest": "/server.mjs"
+    },
+    {
+      "src": "/(.*)",
       "dest": "/index.html"
     }
   ]
