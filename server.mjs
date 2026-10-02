@@ -4,13 +4,19 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import webpush from 'web-push';
 import session from 'express-session';
-import fs from 'fs';
+import { Redis } from '@upstash/redis';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize Upstash Redis Client
+const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
 // Serve static files and parse JSON bodies
 app.use(express.static(__dirname));
@@ -45,31 +51,6 @@ webpush.setVapidDetails(
 
 let pushSubscriptions = [];
 
-// -------------------------------------------------------------
-// Keys Management Helpers
-// -------------------------------------------------------------
-const KEYS_FILE = path.join(__dirname, 'keys.json');
-
-function getKeysData() {
-    if (!fs.existsSync(KEYS_FILE)) {
-        const initial = {
-            "DEMO-KEY-123": { usedBy: null, activatedAt: null },
-            "PLANWERK-2026": { usedBy: null, activatedAt: null }
-        };
-        fs.writeFileSync(KEYS_FILE, JSON.stringify(initial, null, 2));
-        return initial;
-    }
-    try {
-        return JSON.parse(fs.readFileSync(KEYS_FILE, 'utf-8'));
-    } catch (e) {
-        return {};
-    }
-}
-
-function saveKeysData(data) {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(data, null, 2));
-}
-
 // Auth Middleware
 function requireAuth(req, res, next) {
     if (req.session && req.session.authenticated) {
@@ -79,48 +60,74 @@ function requireAuth(req, res, next) {
 }
 
 // -------------------------------------------------------------
-// Authentication Endpoints
+// Authentication Endpoints (Database-backed)
 // -------------------------------------------------------------
 app.get('/api/auth-status', (req, res) => {
     res.json({ authenticated: !!(req.session && req.session.authenticated) });
 });
 
-app.post('/api/verify-key', (req, res) => {
-    const { key, deviceId } = req.body;
+app.post('/api/verify-key', async (req, res) => {
+    try {
+        const { key, deviceId } = req.body;
 
-    if (!key || !deviceId) {
-        return res.status(400).json({ error: 'Ungültige Anfrage. Schlüssel und Geräte-ID erforderlich.' });
+        if (!key || !deviceId) {
+            return res.status(400).json({ error: 'Ungültige Anfrage. Schlüssel und Geräte-ID erforderlich.' });
+        }
+
+        const trimmedKey = key.trim();
+
+        // Retrieve key info from Redis database
+        let keyInfo = await redis.get(`key:${trimmedKey}`);
+
+        // Auto-seed demo keys if requested for the first time
+        if (!keyInfo) {
+            if (trimmedKey === 'DEMO-KEY-123' || trimmedKey === 'PLANWERK-2026') {
+                keyInfo = { usedBy: null, activatedAt: null };
+                await redis.set(`key:${trimmedKey}`, keyInfo);
+            } else {
+                return res.status(401).json({ error: 'Ungültiger Lizenzschlüssel!' });
+            }
+        }
+
+        if (keyInfo.usedBy === null) {
+            // First activation -> Bind key to deviceId in database
+            keyInfo.usedBy = deviceId;
+            keyInfo.activatedAt = new Date().toISOString();
+            await redis.set(`key:${trimmedKey}`, keyInfo);
+
+            req.session.authenticated = true;
+            req.session.deviceId = deviceId;
+            return res.json({ success: true, message: 'Schlüssel erfolgreich an dieses Gerät gebunden!' });
+        } else if (keyInfo.usedBy === deviceId) {
+            // Same device returning -> Allow access
+            req.session.authenticated = true;
+            req.session.deviceId = deviceId;
+            return res.json({ success: true, message: 'Willkommen zurück!' });
+        } else {
+            // Key already bound to a different device -> Reject
+            return res.status(403).json({ 
+                error: 'Dieser Schlüssel wurde bereits auf einem anderen Gerät eingelöst!' 
+            });
+        }
+    } catch (err) {
+        console.error('Database Connection Error:', err);
+        return res.status(500).json({ error: 'Fehler bei der Datenbankverbindung.' });
+    }
+});
+
+// Admin Endpoint: Add new customer keys to database
+app.post('/api/admin/create-key', async (req, res) => {
+    const { adminSecret, newKey } = req.body;
+    if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+        return res.status(403).json({ error: 'Nicht autorisiert.' });
+    }
+    if (!newKey) {
+        return res.status(400).json({ error: 'Schlüssel erforderlich.' });
     }
 
-    const trimmedKey = key.trim();
-    const keysData = getKeysData();
-
-    if (!keysData[trimmedKey]) {
-        return res.status(401).json({ error: 'Ungültiger Lizenzschlüssel!' });
-    }
-
-    const keyInfo = keysData[trimmedKey];
-
-    if (keyInfo.usedBy === null) {
-        // First activation -> Bind key to this device
-        keyInfo.usedBy = deviceId;
-        keyInfo.activatedAt = new Date().toISOString();
-        saveKeysData(keysData);
-
-        req.session.authenticated = true;
-        req.session.deviceId = deviceId;
-        return res.json({ success: true, message: 'Schlüssel erfolgreich an dieses Gerät gebunden!' });
-    } else if (keyInfo.usedBy === deviceId) {
-        // Same device reconnecting -> Allow
-        req.session.authenticated = true;
-        req.session.deviceId = deviceId;
-        return res.json({ success: true, message: 'Willkommen zurück!' });
-    } else {
-        // Already redeemed on another device -> Block
-        return res.status(403).json({ 
-            error: 'Dieser Schlüssel wurde bereits auf einem anderen Gerät eingelöst!' 
-        });
-    }
+    const trimmedKey = newKey.trim();
+    await redis.set(`key:${trimmedKey}`, { usedBy: null, activatedAt: null });
+    return res.json({ success: true, message: `Schlüssel '${trimmedKey}' in Datenbank gespeichert.` });
 });
 
 app.post('/api/logout', (req, res) => {
