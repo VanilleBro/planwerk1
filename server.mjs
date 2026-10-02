@@ -1,3 +1,4 @@
+import 'dotenv/config'; // <-- ADD THIS LINE AT THE TOP
 import express from 'express';
 import { WebUntis } from 'webuntis';
 import path from 'path';
