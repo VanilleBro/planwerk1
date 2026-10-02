@@ -102,6 +102,17 @@
         .action-btn { background: #17263a; color: var(--ink); border: none; padding: 8px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 12px; flex: 1; min-width: 120px; }
         .action-btn.primary { background: var(--mint); color: var(--green); }
 
+        /* Key Lock Modal Styles */
+        .auth-overlay { position: fixed; inset: 0; background: rgba(7, 17, 31, 0.94); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; }
+        .auth-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; width: 100%; max-width: 380px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+        .auth-card h2 { margin: 4px 0 8px; font-size: 20px; font-family: 'Space Grotesk', sans-serif; }
+        .auth-card p { color: var(--muted); font-size: 13px; margin: 0 0 20px; line-height: 1.4; }
+        .auth-input { width: 100%; border: 1px solid var(--line); background: #07111f; color: var(--ink); padding: 12px; border-radius: 8px; font-size: 14px; text-align: center; margin-bottom: 12px; outline: none; font-family: inherit; }
+        .auth-input:focus { border-color: var(--accent); }
+        .auth-btn { width: 100%; background: var(--green); color: #07111f; border: none; padding: 12px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px; font-family: inherit; transition: opacity .2s; }
+        .auth-btn:hover { opacity: 0.9; }
+        .auth-error { color: #ef5b61; font-size: 12px; margin-top: 10px; display: none; font-weight: 600; }
+
         @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
         @media (max-width: 600px) {
@@ -122,6 +133,19 @@
     </style>
 </head>
 <body>
+
+<div class="auth-overlay" id="authOverlay" style="display: none;">
+    <div class="auth-card">
+        <div class="eyebrow" style="margin-bottom: 6px;">Zugangsbeschränkung</div>
+        <h2>Planwerk Freischalten</h2>
+        <p>Gib deinen persönlichen Lizenzschlüssel ein, um auf den Stundenplan zuzugreifen.</p>
+        <form onsubmit="submitAccessKey(event)">
+            <input type="text" id="accessKeyInput" class="auth-input" placeholder="LIZENZSCHLÜSSEL" required autocomplete="off">
+            <button type="submit" class="auth-btn">Freischalten</button>
+        </form>
+        <div class="auth-error" id="authError"></div>
+    </div>
+</div>
 
 <main class="app" id="app-content">
     <header>
@@ -217,9 +241,18 @@
         }
         try {
             const response = await fetch('/api/timetable');
+            
+            if (response.status === 401) {
+                document.getElementById('authOverlay').style.display = 'flex';
+                document.getElementById('week').innerHTML = '<div style="color:var(--muted); padding: 15px; text-align:center;">Bitte Lizenzschlüssel eingeben.</div>';
+                return;
+            }
+
             if (!response.ok) {
                 throw new Error(`HTTP Fehler ${response.status}`);
             }
+
+            document.getElementById('authOverlay').style.display = 'none';
             const freshData = await response.json();
             timetable = freshData;
             renderAll();
@@ -228,6 +261,33 @@
             if (!isBackground) {
                 document.getElementById('week').innerHTML = `<div style="color:#ef5b61; padding: 15px; text-align:center;">Verbindung fehlgeschlagen: ${error.message}</div>`;
             }
+        }
+    }
+
+    async function submitAccessKey(e) {
+        e.preventDefault();
+        const key = document.getElementById('accessKeyInput').value.trim();
+        const errorEl = document.getElementById('authError');
+        errorEl.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/verify-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key })
+            });
+
+            const data = await response.json();
+            if (response.ok && data.success) {
+                document.getElementById('authOverlay').style.display = 'none';
+                loadTimetable();
+            } else {
+                errorEl.textContent = data.error || 'Ungültiger Lizenzschlüssel!';
+                errorEl.style.display = 'block';
+            }
+        } catch (err) {
+            errorEl.textContent = 'Fehler bei der Verbindung zum Server.';
+            errorEl.style.display = 'block';
         }
     }
 
@@ -543,3 +603,4 @@
 </script>
 </body>
 </html>
+
