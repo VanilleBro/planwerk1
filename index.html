@@ -185,7 +185,7 @@
     <div class="modal-box">
         <h2 class="modal-title">Lizenzschlüssel erforderlich</h2>
         <div class="modal-desc" id="licenseModalDesc">Bitte gib deinen Lizenzschlüssel ein, um den Stundenplan zu laden.</div>
-        <input type="password" id="licenseInput" class="modal-input" placeholder="Lizenzschlüssel hier eingeben..." autocomplete="off">
+        <input type="text" id="licenseInput" class="modal-input" placeholder="Lizenzschlüssel hier eingeben..." autocomplete="off">
         <button class="modal-btn" onclick="saveAndApplyLicense()">Speichern & Fortfahren</button>
     </div>
 </div>
@@ -215,6 +215,16 @@
         { pause: 'Pause', start: 1545, end: 1600 },
         { label: '10. Stunde', start: 1600, end: 1700 }
     ];
+
+    // Eindeutige Geräte-ID erzeugen oder abrufen
+    function getDeviceId() {
+        let devId = localStorage.getItem('planwerk_device_id');
+        if (!devId) {
+            devId = 'device_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+            localStorage.setItem('planwerk_device_id', devId);
+        }
+        return devId;
+    }
 
     async function initApp() {
         const savedSettings = localStorage.getItem('planwerk_settings');
@@ -252,9 +262,33 @@
         showLicenseModal('Lizenzschlüssel bearbeiten oder erneuern:');
     }
 
-    function saveAndApplyLicense() {
+    async function saveAndApplyLicense() {
         const val = document.getElementById('licenseInput').value.trim();
-        if (val) {
+        if (!val) return;
+
+        const deviceId = getDeviceId();
+
+        try {
+            // Erst Verifizierung mit Gerätebindung
+            const res = await fetch('/api/verify-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: val, deviceId: deviceId })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok || data.success === false) {
+                showLicenseModal(data.error || 'Ungültiger Lizenzschlüssel!');
+                return;
+            }
+
+            licenseKey = val;
+            localStorage.setItem('planwerk_license', licenseKey);
+            hideLicenseModal();
+            loadTimetable();
+        } catch (err) {
+            // Fallback: Versuche direkt zu laden
             licenseKey = val;
             localStorage.setItem('planwerk_license', licenseKey);
             hideLicenseModal();
@@ -267,11 +301,13 @@
             document.getElementById('week').innerHTML = '<div style="color:var(--muted); padding: 15px; text-align:center;">Lade Stundenplan...</div>';
         }
         try {
-            // Sende Lizenzschlüssel sowohl in Headers als auch in der Query-URL mit
-            const url = `/api/timetable?key=${encodeURIComponent(licenseKey)}&license=${encodeURIComponent(licenseKey)}`;
+            const deviceId = getDeviceId();
+            const url = `/api/timetable?key=${encodeURIComponent(licenseKey)}&deviceId=${encodeURIComponent(deviceId)}`;
+            
             const response = await fetch(url, {
                 headers: {
                     'X-License-Key': licenseKey,
+                    'X-Device-Id': deviceId,
                     'Authorization': `Bearer ${licenseKey}`
                 }
             });
@@ -280,7 +316,7 @@
 
             if (!response.ok || freshData.success === false) {
                 const errMsg = freshData.error || `HTTP Fehler ${response.status}`;
-                if (response.status === 401 || response.status === 403 || errMsg.includes('Lizenz') || errMsg.includes('Zugriff verweigert')) {
+                if (response.status === 401 || response.status === 403 || errMsg.includes('Lizenz') || errMsg.includes('Zugriff verweigert') || errMsg.includes('Gerät')) {
                     showLicenseModal(errMsg);
                     return;
                 }

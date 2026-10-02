@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Sichere Redis-Initialisierung (verhindert Totalabsturz auf Vercel, falls Env-Variablen fehlen)
+// Sichere Redis-Initialisierung
 let redis = null;
 if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
     redis = new Redis({
@@ -31,14 +31,14 @@ app.use(express.json());
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, X-Device-Id, Authorization');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
     }
     next();
 });
 
-// Route für Web-App Manifest (verhindert 404 Fehler)
+// Route für Web-App Manifest
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Content-Type', 'application/manifest+json');
     res.json({
@@ -52,16 +52,11 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// Explizite Routen für Admin-Seite
-app.get('/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'admin.html'));
-});
+// Admin-Seiten
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
+app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 
-app.get('/admin.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'admin.html'));
-});
-
-// Statische Dateien ausliefern
+// Statische Dateien
 app.use(express.static(__dirname));
 
 // Session Configuration
@@ -70,37 +65,29 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Tage
+        maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true
     }
 }));
 
 // WebUntis Configuration
 const UNTIS_CONFIG = {
-    school: process.env.UNTIS_SCHOOL || 'anno-gym-siegburg',
-    username: process.env.UNTIS_USER || 'EF',
+    school: process.env.UNTIS_SCHOOL || 'demo-school',
+    username: process.env.UNTIS_USER || 'demo-user',
     password: process.env.UNTIS_PASSWORD || '580292Qa',
-    server: process.env.UNTIS_SERVER || 'anno-gym-siegburg.webuntis.com'
+    server: process.env.UNTIS_SERVER || 'untis.webuntis.com'
 };
 
 // VAPID Web Push Setup
 const vapidKeys = webpush.generateVAPIDKeys();
-webpush.setVapidDetails(
-    'mailto:admin@planwerk.app',
-    vapidKeys.publicKey,
-    vapidKeys.privateKey
-);
-
+webpush.setVapidDetails('mailto:admin@planwerk.app', vapidKeys.publicKey, vapidKeys.privateKey);
 let pushSubscriptions = [];
 
-// Auth Middleware (Erweitert: Akzeptiert Session ODER direkten Lizenzschlüssel per Header/Query)
+// -------------------------------------------------------------
+// Striktes Auth Middleware: Gerätebindung für jeden Schlüssel
+// -------------------------------------------------------------
 async function requireAuth(req, res, next) {
-    // 1. Authentifizierung über aktive Session
-    if (req.session && req.session.authenticated) {
-        return next();
-    }
-
-    // 2. Authentifizierung über mitgeschickten Lizenzschlüssel (Header / Query / Bearer)
+    // 1. Geräte-ID & Lizenzschlüssel aus Request extrahieren
     const authHeader = req.headers['authorization'] || '';
     const bearerKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
 
@@ -112,28 +99,64 @@ async function requireAuth(req, res, next) {
         ''
     ).toString().trim();
 
-    if (providedKey) {
-        const envKey = (process.env.LICENSE_KEY || process.env.KEY || 'TEST99911').trim();
-        
-        // Prüfe gegen Env-Variablen oder Standard-Keys
-        if (providedKey === envKey || providedKey === 'DEMO-KEY-123' || providedKey === 'PLANWERK-2026') {
-            return next();
-        }
+    const clientDeviceId = (
+        req.headers['x-device-id'] ||
+        req.query?.deviceId ||
+        req.session?.deviceId ||
+        ''
+    ).toString().trim();
 
-        // Prüfe gegen Redis-Datenbank
-        if (redis) {
-            try {
-                const keyInfo = await redis.get(`key:${providedKey}`);
-                if (keyInfo) {
-                    return next();
-                }
-            } catch (err) {
-                console.error('Redis Auth Check Error:', err);
-            }
-        }
+    if (!providedKey) {
+        return res.status(401).json({ error: 'Zugriff verweigert. Bitte Lizenzschlüssel eingeben.' });
     }
 
-    return res.status(401).json({ error: 'Zugriff verweigert. Bitte Lizenzschlüssel eingeben.' });
+    if (!clientDeviceId) {
+        return res.status(400).json({ error: 'Zugriff verweigert. Keine Geräte-ID übermittelt.' });
+    }
+
+    // Globaler Admin-Key aus Umgebungsvariablen (Bypass für den Admin/Testen)
+    const envAdminKey = (process.env.LICENSE_KEY || process.env.KEY || '').trim();
+    if (envAdminKey && providedKey === envAdminKey) {
+        return next();
+    }
+
+    // 2. Prüfung in Redis
+    if (redis) {
+        try {
+            let keyInfo = await redis.get(`key:${providedKey}`);
+
+            // Automatische Erstellung von Standard-Demo-Keys
+            if (!keyInfo && (providedKey === 'DEMO-KEY-123' || providedKey === 'PLANWERK-2026')) {
+                keyInfo = { usedBy: null, activatedAt: null };
+            }
+
+            if (!keyInfo) {
+                return res.status(401).json({ error: 'Ungültiger Lizenzschlüssel!' });
+            }
+
+            // Fall A: Schlüssel ist noch UNBENUTZT -> Jetzt an dieses Gerät binden
+            if (keyInfo.usedBy === null) {
+                keyInfo.usedBy = clientDeviceId;
+                keyInfo.activatedAt = new Date().toISOString();
+                await redis.set(`key:${providedKey}`, keyInfo);
+                return next();
+            }
+
+            // Fall B: Schlüssel ist bereits GEBUNDEN -> Gerät überprüfen
+            if (keyInfo.usedBy === clientDeviceId) {
+                return next(); // Gerät stimmt überein!
+            } else {
+                return res.status(403).json({ 
+                    error: 'Dieser Lizenzschlüssel ist bereits an ein anderes Gerät gebunden!' 
+                });
+            }
+        } catch (err) {
+            console.error('Redis Auth Check Error:', err);
+            return res.status(500).json({ error: 'Fehler bei der Datenbankprüfung.' });
+        }
+    } else {
+        return res.status(500).json({ error: 'Datenbank (Redis) ist nicht konfiguriert.' });
+    }
 }
 
 // -------------------------------------------------------------
@@ -145,97 +168,72 @@ app.get('/api/auth-status', (req, res) => {
 
 app.post('/api/verify-key', async (req, res) => {
     try {
-        if (!redis) {
-            return res.status(500).json({ error: 'Datenbank nicht konfiguriert. Bitte Umgebungsvariablen in Vercel prüfen.' });
-        }
+        if (!redis) return res.status(500).json({ error: 'Datenbank nicht konfiguriert.' });
 
         const { key, deviceId } = req.body;
-
-        if (!key || !deviceId) {
-            return res.status(400).json({ error: 'Ungültige Anfrage. Schlüssel und Geräte-ID erforderlich.' });
-        }
+        if (!key || !deviceId) return res.status(400).json({ error: 'Schlüssel und Geräte-ID erforderlich.' });
 
         const trimmedKey = key.trim();
-
-        // Key aus der Redis-Datenbank abrufen
         let keyInfo = await redis.get(`key:${trimmedKey}`);
 
-        // Standard-Demokey automatisch anlegen
         if (!keyInfo) {
-            const envKey = (process.env.LICENSE_KEY || process.env.KEY || 'TEST99911').trim();
+            const envKey = (process.env.LICENSE_KEY || process.env.KEY || '').trim();
             if (trimmedKey === 'DEMO-KEY-123' || trimmedKey === 'PLANWERK-2026' || trimmedKey === envKey) {
                 keyInfo = { usedBy: null, activatedAt: null };
-                await redis.set(`key:${trimmedKey}`, keyInfo);
             } else {
                 return res.status(401).json({ error: 'Ungültiger Lizenzschlüssel!' });
             }
         }
 
         if (keyInfo.usedBy === null) {
-            // Erste Aktivierung -> Key an dieses Gerät binden
             keyInfo.usedBy = deviceId;
             keyInfo.activatedAt = new Date().toISOString();
             await redis.set(`key:${trimmedKey}`, keyInfo);
-
             req.session.authenticated = true;
             req.session.deviceId = deviceId;
             return res.json({ success: true, message: 'Schlüssel erfolgreich an dieses Gerät gebunden!' });
         } else if (keyInfo.usedBy === deviceId) {
-            // Selbes Gerät -> Zugang gewähren
             req.session.authenticated = true;
             req.session.deviceId = deviceId;
             return res.json({ success: true, message: 'Willkommen zurück!' });
         } else {
-            // Bereits auf anderem Gerät aktiviert -> Sperren
-            return res.status(403).json({ 
-                error: 'Dieser Schlüssel wurde bereits auf einem anderen Gerät eingelöst!' 
-            });
+            return res.status(403).json({ error: 'Dieser Schlüssel wurde bereits auf einem anderen Gerät eingelöst!' });
         }
     } catch (err) {
-        console.error('Datenbank-Fehler:', err);
         return res.status(500).json({ error: 'Fehler bei der Verbindung zur Datenbank.' });
     }
 });
 
-// Admin Endpoint: Neue Kunden-Keys erstellen
+// Admin Endpoint: Neue Schlüssel erstellen
 app.post('/api/admin/create-key', async (req, res) => {
     try {
-        if (!redis) {
-            return res.status(500).json({ error: 'Datenbank nicht konfiguriert. Bitte Umgebungsvariablen prüfen.' });
-        }
+        if (!redis) return res.status(500).json({ error: 'Datenbank nicht konfiguriert.' });
 
         const { adminSecret, newKey } = req.body;
-
         if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
             return res.status(403).json({ error: 'Nicht autorisiert. Falsches Admin-Passwort.' });
         }
 
-        if (!newKey || !newKey.trim()) {
-            return res.status(400).json({ error: 'Schlüssel darf nicht leer sein.' });
-        }
+        if (!newKey || !newKey.trim()) return res.status(400).json({ error: 'Schlüssel darf nicht leer sein.' });
 
         const trimmedKey = newKey.trim();
         await redis.set(`key:${trimmedKey}`, { usedBy: null, activatedAt: null });
 
-        return res.json({ success: true, message: `Schlüssel '${trimmedKey}' erfolgreich gespeichert!` });
+        return res.json({ success: true, message: `Schlüssel '${trimmedKey}' erfolgreich erstellt!` });
     } catch (err) {
-        console.error('Admin Key Creation Error:', err);
         return res.status(500).json({ error: 'Fehler beim Erstellen des Schlüssels.' });
     }
 });
 
 app.post('/api/logout', (req, res) => {
-    req.session.destroy((err) => {
-        if (err) {
-            return res.status(500).json({ error: 'Fehler beim Abmelden.' });
-        }
+    req.session.destroy(() => {
         res.clearCookie('connect.sid');
         res.json({ success: true });
     });
 });
 
 // -------------------------------------------------------------
-// Timetable & WebPush Endpoints
+// Timetable Endpoint
 // -------------------------------------------------------------
 app.get('/api/timetable', requireAuth, async (req, res) => {
     const untis = new WebUntis(
@@ -249,30 +247,28 @@ app.get('/api/timetable', requireAuth, async (req, res) => {
         await untis.login();
         const today = new Date();
         const timetable = await untis.getOwnTimetableFor(today);
-        await untis.logout();
-        res.json({ success: true, timetable });
+        return res.json({ success: true, timetable });
     } catch (error) {
-        res.status(500).json({ 
-            error: 'Fehler beim Laden des Stundenplans.', 
-            details: error.message 
+        console.error('WebUntis Fehler:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: 'Fehler beim Laden des Stundenplans von WebUntis.', 
+            details: error.message || error 
         });
+    } finally {
+        try { await untis.logout(); } catch (e) {}
     }
 });
 
-app.get('/api/vapid-public-key', (req, res) => {
-    res.json({ publicKey: vapidKeys.publicKey });
-});
+app.get('/api/vapid-public-key', (req, res) => res.json({ publicKey: vapidKeys.publicKey }));
 
 app.post('/api/subscribe', requireAuth, (req, res) => {
-    const subscription = req.body;
-    pushSubscriptions.push(subscription);
+    pushSubscriptions.push(req.body);
     res.status(201).json({ success: true });
 });
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => {
-        console.log(`Planwerk Server läuft auf Port ${PORT}`);
-    });
+    app.listen(PORT, () => console.log(`Planwerk Server läuft auf Port ${PORT}`));
 }
 
 export default app;
