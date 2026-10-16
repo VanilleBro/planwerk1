@@ -72,10 +72,10 @@ app.use(session({
 
 // WebUntis Configuration
 const UNTIS_CONFIG = {
-    school: process.env.UNTIS_SCHOOL || 'anno-gym-siegburg',
-    username: process.env.UNTIS_USER || 'Q1',
-    password: process.env.UNTIS_PASSWORD || '206971Yi',
-    server: process.env.UNTIS_SERVER || 'anno-gym-siegburg.webuntis.com'
+    school: process.env.UNTIS_SCHOOL,
+    username: process.env.UNTIS_USER,
+    password: process.env.UNTIS_PASSWORD,
+    server: process.env.UNTIS_SERVER
 };
 
 // VAPID Web Push Setup
